@@ -1,0 +1,93 @@
+# SEC Annual Report Downloader Configuration
+
+# SEC EDGAR API Settings
+sec:
+  base_url: "https://www.sec.gov/Archives/edgar/data"
+  search_url: "https://www.sec.gov/cgi-bin/browse-edgar"
+  user_agent: "Your Company Name yourname@example.com"
+  rate_limit:
+    requests_per_second: 10
+    delay_between_requests: 0.1
+
+# Download Settings
+download:
+  default_format: "html"  # txt, html, xml
+  save_metadata: true
+  create_company_folders: true
+  overwrite_existing: false
+  max_retries: 3
+  timeout: 30
+
+# File Paths
+paths:
+  downloads: "data/downloads"
+  logs: "data/logs"
+  temp: "data/temp"
+
+# Logging Configuration
+logging:
+  level: "INFO"  # DEBUG, INFO, WARNING, ERROR, CRITICAL
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  file_rotation: "daily"
+  max_file_size: "10MB"
+  backup_count: 7
+
+# Retry Configuration
+retry:
+  max_attempts: 3
+  initial_delay: 1.0
+  max_delay: 60.0
+  exponential_base: 2.0
+  jitter: true
+
+# Validation Settings
+validation:
+  check_file_integrity: true
+  verify_content_type: true
+  min_file_size: 1024  # bytes
+  allowed_formats: ["html", "txt", "xml"]
+
+# Company Database (optional)
+companies:
+  # Pre-defined company mappings (ticker -> CIK)
+  # Major companies from S&P 500 and other indices
+  mappings:
+    # Technology
+    AAPL: "0000320193"  # Apple Inc.
+    MSFT: "0000789019"  # Microsoft Corporation
+    GOOGL: "0001652044" # Alphabet Inc. (Google)
+    AMZN: "0001018724"  # Amazon.com Inc.
+    TSLA: "0001318605"  # Tesla Inc.
+    NVDA: "0001045810"  # NVIDIA Corporation
+    META: "0001326801"  # Meta Platforms Inc.
+    NFLX: "0001065280"  # Netflix Inc.
+    ADBE: "0000796343"  # Adobe Inc.
+    CRM: "0001108524"   # Salesforce Inc.
+    
+    # Financial
+    JPM: "0000019617"   # JPMorgan Chase & Co.
+    BAC: "0000070858"   # Bank of America Corp.
+    WFC: "0000072971"   # Wells Fargo & Company
+    GS: "0000886982"    # Goldman Sachs Group Inc.
+    MS: "0000895421"    # Morgan Stanley
+    
+    # Healthcare
+    JNJ: "0000200406"   # Johnson & Johnson
+    PFE: "0000078003"   # Pfizer Inc.
+    UNH: "0000731766"   # UnitedHealth Group Inc.
+    ABBV: "0001551152"  # AbbVie Inc.
+    MRK: "0000310158"   # Merck & Co. Inc.
+    
+    # Consumer
+    PG: "0000080424"    # Procter & Gamble Co.
+    KO: "0000021344"    # Coca-Cola Co.
+    WMT: "0000104169"   # Walmart Inc.
+    HD: "0000354950"    # Home Depot Inc.
+    MCD: "0000063908"   # McDonald's Corporation
+    
+    # Industrial
+    BA: "0000012927"    # Boeing Co.
+    CAT: "0000018230"   # Caterpillar Inc.
+    GE: "0000040545"    # General Electric Co.
+    DIS: "0001001039"   # Walt Disney Co.
+    NKE: "0000320187"   # Nike Inc.
