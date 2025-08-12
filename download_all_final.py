@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """
-Simple script to download all companies from company.csv
+Simple script to download all companies from SEC database
 """
 
-import csv
 import time
 import requests
 from src.core.downloader import SECDownloader
@@ -94,10 +93,8 @@ def get_cik_from_sec(ticker: str, sec_database=None):
     
     return sec_database.get(ticker.upper())
 
-
-
-def download_all_companies(csv_path="company.csv", year=2023, max_companies=None):
-    """Download all companies from CSV"""
+def download_all_companies(year=2023, max_companies=None, ticker_filter=None):
+    """Download companies from SEC database"""
     
     setup_logger()
     config = Config()
@@ -109,34 +106,33 @@ def download_all_companies(csv_path="company.csv", year=2023, max_companies=None
     
     companies = []
     
-    # Load companies from CSV
-    with open(csv_path, 'r') as file:
-        reader = csv.DictReader(file)
-        count = 0
+    # Filter companies
+    count = 0
+    for ticker, details in company_details.items():
+        if max_companies and count >= max_companies:
+            break
+            
+        # Skip invalid tickers
+        if not ticker or len(ticker) > 5 or any(c in ticker for c in ['-', '/', '^', '.']):
+            continue
         
-        for row in reader:
-            if max_companies and count >= max_companies:
-                break
-                
-            ticker = row['symbol'].strip().upper()
-            name = row.get('name', '').strip()
-            
-            # Skip invalid tickers
-            if not ticker or len(ticker) > 5 or any(c in ticker for c in ['-', '/', '^', '.']):
-                continue
-            
-            # Get CIK from SEC database
-            cik = sec_database.get(ticker)
-            if cik:
-                print(f"  ✓ Found CIK for {ticker}: {cik}")
-                companies.append({
-                    'ticker': ticker,
-                    'name': name,
-                    'cik': cik
-                })
-                count += 1
-            else:
-                print(f"  ✗ No CIK found for {ticker}")
+        # Apply ticker filter if specified
+        if ticker_filter and ticker_filter.lower() not in ticker.lower():
+            continue
+        
+        name = details.get('name', '')
+        cik = details.get('cik', '')
+        
+        if cik:
+            print(f"  ✓ Found CIK for {ticker}: {cik}")
+            companies.append({
+                'ticker': ticker,
+                'name': name,
+                'cik': cik
+            })
+            count += 1
+        else:
+            print(f"  ✗ No CIK found for {ticker}")
     
     print(f"Found {len(companies)} companies with CIK numbers from SEC database")
     
@@ -175,11 +171,11 @@ if __name__ == "__main__":
     import argparse
     
     parser = argparse.ArgumentParser()
-    parser.add_argument("--csv", default="company.csv")
     parser.add_argument("--year", type=int, default=2023)
-    parser.add_argument("--max", type=int)
+    parser.add_argument("--max", type=int, help="Maximum number of companies to process")
+    parser.add_argument("--ticker", help="Filter companies by ticker (partial match)")
     
     args = parser.parse_args()
     
-    print("Downloading all companies from CSV...")
-    download_all_companies(args.csv, args.year, args.max)
+    print("Downloading companies from SEC database...")
+    download_all_companies(args.year, args.max, args.ticker)

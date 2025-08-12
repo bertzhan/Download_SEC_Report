@@ -79,17 +79,17 @@ class SECDownloader:
                 filing.local_path = str(file_path)
                 return filing
             
+            # Set local_path BEFORE downloading content so image processing knows where to create resources
+            filing.local_path = str(file_path)
+            
             # Download content
             content = self.sec_client.download_filing_content(filing)
             if not content:
                 return None
             
-            # Save file
+            # Save file with proper UTF-8 encoding
             with open(file_path, 'wb') as f:
                 f.write(content)
-            
-            # Update filing with local path
-            filing.local_path = str(file_path)
             
             self.logger.info(f"Successfully downloaded: {file_path}")
             return filing

@@ -7,6 +7,8 @@ A Python application for downloading annual reports (10-K filings) from the U.S.
 - Download annual reports (10-K) for specified companies
 - Support for multiple companies and date ranges
 - Configurable download options (formats, date filters)
+- **Enhanced HTML support with embedded image downloading**
+- **CSS file processing and resource management**
 - Rate limiting to comply with SEC guidelines
 - Error handling and retry mechanisms
 - Progress tracking and logging
@@ -123,3 +125,49 @@ python -m pytest tests/
 ## License
 
 MIT License
+
+## Enhanced HTML Support
+
+The downloader now includes comprehensive support for HTML filings with embedded resources:
+
+### Image Downloading
+- Automatically detects and downloads images referenced in HTML files
+- Updates image paths to reference local copies
+- Supports various image formats (JPG, PNG, GIF, etc.)
+
+### CSS Processing
+- Downloads external CSS files referenced in HTML
+- Processes CSS files to find and download embedded resources (background images, fonts)
+- Updates CSS references to point to local files
+
+### Resource Organization
+- Creates organized folder structure for downloaded resources
+- Configurable resource folder layout
+- Maintains relative paths for proper HTML rendering
+
+### Configuration Options
+```yaml
+download:
+  download_images: true      # Download embedded images
+  download_css: true         # Download CSS files
+  download_resources: true   # Download other resources (fonts, etc.)
+  create_resource_folders: true  # Create organized resource folders
+```
+
+### File Structure
+When downloading HTML filings with images, the following structure is created:
+```
+data/downloads/
+├── AAPL/
+│   ├── 2023/
+│   │   ├── AAPL_10K_2023.html
+│   │   └── resources/
+│   │       ├── images/
+│   │       │   ├── image_000.jpg
+│   │       │   └── image_001.png
+│   │       └── css/
+│   │           ├── stylesheet_000.css
+│   │           └── resource_000.jpg
+```
+
+This ensures that downloaded HTML files display properly with all images and styling intact when viewed locally.

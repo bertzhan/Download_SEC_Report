@@ -17,6 +17,10 @@ download:
   overwrite_existing: false
   max_retries: 3
   timeout: 30
+  download_images: true  # Whether to download embedded images
+  download_css: true     # Whether to download CSS files
+  download_resources: true  # Whether to download other resources (fonts, etc.)
+  create_resource_folders: true  # Create organized resource folders
 
 # File Paths
 paths:

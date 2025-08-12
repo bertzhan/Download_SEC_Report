@@ -2,9 +2,12 @@
 
 import requests
 import re
+import os
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Optional, Tuple
 from bs4 import BeautifulSoup
+from urllib.parse import urljoin, urlparse
+from pathlib import Path
 
 from ..models.filing import Filing, FilingType
 from ..models.company import Company
@@ -207,7 +210,7 @@ class SECClient:
             return None
     
     def download_filing_content(self, filing: Filing) -> Optional[bytes]:
-        """Download filing content."""
+        """Download filing content with embedded images."""
         try:
             self.logger.info(f"Downloading filing: {filing.file_name}")
             rate_limit_delay(self.requests_per_second)
@@ -229,11 +232,297 @@ class SECClient:
             doc_response = self.session.get(main_doc_url, timeout=30)
             doc_response.raise_for_status()
             
-            self.logger.info(f"Successfully downloaded {len(doc_response.content)} bytes")
-            return doc_response.content
+            # Process the HTML to download images and update references
+            processed_content = self._process_html_with_images(doc_response.content, main_doc_url, filing)
+            
+            self.logger.info(f"Successfully downloaded and processed {len(processed_content)} bytes")
+            return processed_content
             
         except requests.RequestException as e:
             self.logger.error(f"Failed to download filing {filing.accession_number}: {e}")
+            return None
+    
+    def _detect_encoding(self, content: bytes) -> str:
+        """Detect the encoding of HTML content."""
+        try:
+            # Try to detect encoding from HTML meta tags first
+            soup = BeautifulSoup(content, 'html.parser')
+            meta_charset = soup.find('meta', charset=True)
+            if meta_charset:
+                return meta_charset['charset']
+            
+            # Try to detect encoding from meta http-equiv
+            meta_equiv = soup.find('meta', attrs={'http-equiv': 'Content-Type'})
+            if meta_equiv and 'charset=' in meta_equiv.get('content', ''):
+                content_attr = meta_equiv['content']
+                charset_start = content_attr.find('charset=') + 8
+                charset_end = content_attr.find(';', charset_start)
+                if charset_end == -1:
+                    charset_end = len(content_attr)
+                return content_attr[charset_start:charset_end].strip()
+            
+            # Fallback to UTF-8 (most common for modern web content)
+            return 'utf-8'
+        except Exception:
+            # Ultimate fallback
+            return 'utf-8'
+    
+    def _process_html_with_images(self, html_content: bytes, base_url: str, filing: Filing) -> bytes:
+        """Process HTML content to download images and update references."""
+        try:
+            # Get download configuration
+            download_config = self.config.get_download_config()
+            download_images = download_config.get('download_images', True)
+            download_css = download_config.get('download_css', True)
+            create_resource_folders = download_config.get('create_resource_folders', True)
+            
+            # Detect encoding and decode content
+            encoding = self._detect_encoding(html_content)
+            self.logger.debug(f"Detected encoding: {encoding}")
+            
+            try:
+                html_text = html_content.decode(encoding)
+            except UnicodeDecodeError:
+                # Fallback to UTF-8 if detected encoding fails
+                self.logger.warning(f"Failed to decode with {encoding}, trying UTF-8")
+                html_text = html_content.decode('utf-8', errors='replace')
+            
+            # Parse HTML
+            soup = BeautifulSoup(html_text, 'html.parser')
+            
+            # Ensure proper encoding in the HTML
+            if not soup.find('meta', charset=True):
+                # Add charset meta tag if missing
+                meta_charset = soup.new_tag('meta', charset='utf-8')
+                if soup.head:
+                    soup.head.insert(0, meta_charset)
+                else:
+                    # Create head if it doesn't exist
+                    head = soup.new_tag('head')
+                    head.insert(0, meta_charset)
+                    soup.html.insert(0, head)
+            
+            # Find all image tags
+            img_tags = soup.find_all('img')
+            self.logger.info(f"Found {len(img_tags)} image tags in HTML")
+            
+            # Find all link tags (for CSS files)
+            link_tags = soup.find_all('link', rel='stylesheet')
+            self.logger.info(f"Found {len(link_tags)} stylesheet links in HTML")
+            
+            # Create resources directory relative to the filing
+            if filing.local_path:
+                filing_dir = Path(filing.local_path).parent
+                if create_resource_folders:
+                    resources_dir = filing_dir / 'resources'
+                    images_dir = resources_dir / 'images'
+                    css_dir = resources_dir / 'css'
+                    images_dir.mkdir(parents=True, exist_ok=True)
+                    css_dir.mkdir(parents=True, exist_ok=True)
+                else:
+                    # Simple flat structure
+                    images_dir = filing_dir / 'images'
+                    css_dir = filing_dir / 'css'
+                    images_dir.mkdir(exist_ok=True)
+                    css_dir.mkdir(exist_ok=True)
+            else:
+                # This should not happen anymore, but keep as safety
+                self.logger.warning("filing.local_path is not set, using fallback directory")
+                if create_resource_folders:
+                    resources_dir = Path('data/downloads/resources')
+                    images_dir = resources_dir / 'images'
+                    css_dir = resources_dir / 'css'
+                    images_dir.mkdir(parents=True, exist_ok=True)
+                    css_dir.mkdir(parents=True, exist_ok=True)
+                else:
+                    images_dir = Path('data/downloads/images')
+                    css_dir = Path('data/downloads/css')
+                    images_dir.mkdir(parents=True, exist_ok=True)
+                    css_dir.mkdir(exist_ok=True)
+            
+            # Process each image if enabled
+            if download_images:
+                for i, img_tag in enumerate(img_tags):
+                    src = img_tag.get('src')
+                    if not src:
+                        continue
+                    
+                    # Convert relative URL to absolute
+                    absolute_url = urljoin(base_url, src)
+                    
+                    # Download image
+                    local_image_path = self._download_image(absolute_url, images_dir, i)
+                    
+                    if local_image_path:
+                        # Update the image src to point to local file
+                        if create_resource_folders:
+                            relative_path = f"resources/images/{local_image_path.name}"
+                        else:
+                            relative_path = f"images/{local_image_path.name}"
+                        img_tag['src'] = relative_path
+                        self.logger.debug(f"Updated image src: {src} -> {relative_path}")
+            
+            # Process each stylesheet if enabled
+            if download_css:
+                for i, link_tag in enumerate(link_tags):
+                    href = link_tag.get('href')
+                    if not href:
+                        continue
+                    
+                    # Convert relative URL to absolute
+                    absolute_url = urljoin(base_url, href)
+                    
+                    # Download CSS file
+                    local_css_path = self._download_css_file(absolute_url, css_dir, i)
+                    
+                    if local_css_path:
+                        # Update the href to point to local file
+                        if create_resource_folders:
+                            relative_path = f"resources/css/{local_css_path.name}"
+                        else:
+                            relative_path = f"css/{local_css_path.name}"
+                        link_tag['href'] = relative_path
+                        self.logger.debug(f"Updated CSS href: {href} -> {relative_path}")
+            
+            # Return processed HTML
+            return str(soup).encode('utf-8')
+            
+        except Exception as e:
+            self.logger.error(f"Error processing HTML with images: {e}")
+            return html_content  # Return original content if processing fails
+    
+    def _download_image(self, image_url: str, images_dir: Path, index: int) -> Optional[Path]:
+        """Download an image and return the local path."""
+        try:
+            self.logger.debug(f"Downloading image: {image_url}")
+            rate_limit_delay(self.requests_per_second)
+            
+            response = self.session.get(image_url, timeout=30)
+            response.raise_for_status()
+            
+            # Determine file extension from URL or content type
+            parsed_url = urlparse(image_url)
+            path = parsed_url.path
+            extension = Path(path).suffix if Path(path).suffix else '.jpg'
+            
+            # Generate filename
+            filename = f"image_{index:03d}{extension}"
+            local_path = images_dir / filename
+            
+            # Save image
+            with open(local_path, 'wb') as f:
+                f.write(response.content)
+            
+            self.logger.debug(f"Downloaded image: {local_path}")
+            return local_path
+            
+        except Exception as e:
+            self.logger.error(f"Failed to download image {image_url}: {e}")
+            return None
+    
+    def _download_css_file(self, css_url: str, css_dir: Path, index: int) -> Optional[Path]:
+        """Download a CSS file and return the local path."""
+        try:
+            self.logger.debug(f"Downloading CSS file: {css_url}")
+            rate_limit_delay(self.requests_per_second)
+            
+            response = self.session.get(css_url, timeout=30)
+            response.raise_for_status()
+            
+            # Determine file extension
+            parsed_url = urlparse(css_url)
+            path = parsed_url.path
+            extension = Path(path).suffix if Path(path).suffix else '.css'
+            
+            # Generate filename
+            filename = f"stylesheet_{index:03d}{extension}"
+            local_path = css_dir / filename
+            
+            # Process CSS content to download embedded images
+            processed_css_content = self._process_css_with_images(response.content, css_url, css_dir)
+            
+            # Save processed CSS file
+            with open(local_path, 'wb') as f:
+                f.write(processed_css_content)
+            
+            self.logger.debug(f"Downloaded and processed CSS file: {local_path}")
+            return local_path
+            
+        except Exception as e:
+            self.logger.error(f"Failed to download CSS file {css_url}: {e}")
+            return None
+    
+    def _process_css_with_images(self, css_content: bytes, css_url: str, css_dir: Path) -> bytes:
+        """Process CSS content to download embedded images and update references."""
+        try:
+            # Get download configuration
+            download_config = self.config.get_download_config()
+            download_resources = download_config.get('download_resources', True)
+            
+            if not download_resources:
+                return css_content  # Return original content if resource downloading is disabled
+            
+            css_text = css_content.decode('utf-8', errors='ignore')
+            
+            # Find all url() references in CSS
+            url_pattern = r'url\(["\']?([^"\')\s]+)["\']?\)'
+            matches = re.findall(url_pattern, css_text)
+            
+            self.logger.debug(f"Found {len(matches)} URL references in CSS")
+            
+            # Process each URL reference
+            for i, url in enumerate(matches):
+                # Skip data URLs and absolute URLs that are not relative to SEC
+                if url.startswith('data:') or url.startswith('http'):
+                    continue
+                
+                # Convert relative URL to absolute
+                absolute_url = urljoin(css_url, url)
+                
+                # Download the resource (could be image, font, etc.)
+                local_resource_path = self._download_css_resource(absolute_url, css_dir, i)
+                
+                if local_resource_path:
+                    # Update the URL reference in CSS
+                    relative_path = local_resource_path.name
+                    css_text = css_text.replace(f'url({url})', f'url({relative_path})')
+                    css_text = css_text.replace(f'url("{url}")', f'url("{relative_path}")')
+                    css_text = css_text.replace(f"url('{url}')", f"url('{relative_path}')")
+                    self.logger.debug(f"Updated CSS URL: {url} -> {relative_path}")
+            
+            return css_text.encode('utf-8')
+            
+        except Exception as e:
+            self.logger.error(f"Error processing CSS with images: {e}")
+            return css_content  # Return original content if processing fails
+    
+    def _download_css_resource(self, resource_url: str, css_dir: Path, index: int) -> Optional[Path]:
+        """Download a resource referenced in CSS and return the local path."""
+        try:
+            self.logger.debug(f"Downloading CSS resource: {resource_url}")
+            rate_limit_delay(self.requests_per_second)
+            
+            response = self.session.get(resource_url, timeout=30)
+            response.raise_for_status()
+            
+            # Determine file extension from URL or content type
+            parsed_url = urlparse(resource_url)
+            path = parsed_url.path
+            extension = Path(path).suffix if Path(path).suffix else '.bin'
+            
+            # Generate filename
+            filename = f"resource_{index:03d}{extension}"
+            local_path = css_dir / filename
+            
+            # Save resource
+            with open(local_path, 'wb') as f:
+                f.write(response.content)
+            
+            self.logger.debug(f"Downloaded CSS resource: {local_path}")
+            return local_path
+            
+        except Exception as e:
+            self.logger.error(f"Failed to download CSS resource {resource_url}: {e}")
             return None
     
     def _extract_main_document_url(self, index_content: str, base_url: str) -> Optional[str]:
