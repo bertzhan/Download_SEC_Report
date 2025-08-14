@@ -142,8 +142,7 @@ def main(start_id=None, end_id=None):
         except Exception as e:
             print(f"  ✗ Error processing {company}: {str(e)}")
             # Still save progress to avoid losing track
-            save_progress(progress_file, progress)
-            continue
+            break
     
     # Final summary
     print(f"\n📊 Summary:")
