@@ -72,13 +72,13 @@ def reset_daily_counter_if_needed(progress_data):
 
 def check_api_limit(progress_data, calls_needed=3):
     """Check if we can make the required API calls today"""
-    if progress_data["daily_api_calls"] + calls_needed > 66:
+    if progress_data["daily_api_calls"] + calls_needed > 240:
         return False
     return True
 
 
 def main(start_id=None, end_id=None):
-    companies = load_company('./company.csv')
+    companies = load_company('data/company.csv')
     progress_file = "./data/progress.json"
     path = "./data/sec_statements"
     
@@ -101,7 +101,7 @@ def main(start_id=None, end_id=None):
     
     print(f"Starting from company index {start_id} (resuming from last run)")
     print(f"Processing companies {start_id} to {end_id-1} out of {len(companies)} total")
-    print(f"Daily API calls used today: {progress['daily_api_calls']}/66")
+    print(f"Daily API calls used today: {progress['daily_api_calls']}")
     
     # Process companies
     for i in tqdm.trange(start_id, end_id):
@@ -134,7 +134,7 @@ def main(start_id=None, end_id=None):
             
             # Save progress after each company
             save_progress(progress_file, progress)
-            print(f"  ✓ Progress saved - API calls used: {progress['daily_api_calls']}/66")
+            print(f"  ✓ Progress saved - API calls used: {progress['daily_api_calls']}")
             
             # Small delay to be respectful to the API
             time.sleep(0.5)
@@ -148,7 +148,7 @@ def main(start_id=None, end_id=None):
     # Final summary
     print(f"\n📊 Summary:")
     print(f"   Companies processed in this session: {progress['total_companies_processed']}")
-    print(f"   Total API calls used today: {progress['daily_api_calls']}/66")
+    print(f"   Total API calls used today: {progress['daily_api_calls']}")
     print(f"   Last processed index: {progress['last_processed_index']}")
     
     if progress["last_processed_index"] < end_id - 1:
