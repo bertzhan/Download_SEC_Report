@@ -106,23 +106,20 @@ def main(start_id=None, end_id=None):
     # Process companies
     for i in tqdm.trange(start_id, end_id):
         company = companies[i]
-        
         # Check if we have enough API calls left for today
         if not check_api_limit(progress, calls_needed=3):
             print(f"\n⚠️  Daily API limit reached ({progress['daily_api_calls']}). Stopping for today.")
             print(f"Last processed company: {company} (index {i})")
             print(f"Resume tomorrow to continue from index {i}")
             break
-        
-        print(f"\nProcessing {i}: {company}")
-        
         try:
+            print(f"\nProcessing {i}: {company}")
             # Process all three statement types for this company
             for stype in ["income", "balance", "cashflow"]:
                 save_statement(stype, path, company)
                 progress["daily_api_calls"] += 1
                 print(f"  ✓ Downloaded {stype} statement")
-            
+
             # Update progress
             progress["last_processed_index"] = i
             progress["total_companies_processed"] += 1
@@ -131,18 +128,17 @@ def main(start_id=None, end_id=None):
                 "symbol": company,
                 "processed_at": datetime.now().isoformat()
             })
-            
+
             # Save progress after each company
             save_progress(progress_file, progress)
             print(f"  ✓ Progress saved - API calls used: {progress['daily_api_calls']}")
-            
+
             # Small delay to be respectful to the API
             time.sleep(0.5)
-            
         except Exception as e:
             print(f"  ✗ Error processing {company}: {str(e)}")
             # Still save progress to avoid losing track
-            break
+            continue
     
     # Final summary
     print(f"\n📊 Summary:")
