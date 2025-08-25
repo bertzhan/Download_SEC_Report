@@ -1,3 +1,5 @@
+from http.client import HTTPException
+from urllib.error import HTTPError
 from urllib.request import urlopen
 import certifi
 import json
@@ -72,7 +74,7 @@ def reset_daily_counter_if_needed(progress_data):
 
 def check_api_limit(progress_data, calls_needed=3):
     """Check if we can make the required API calls today"""
-    if progress_data["daily_api_calls"] + calls_needed > 240:
+    if progress_data["daily_api_calls"] > 240:
         return False
     return True
 
@@ -107,11 +109,6 @@ def main(start_id=None, end_id=None):
     for i in tqdm.trange(start_id, end_id):
         company = companies[i]
         # Check if we have enough API calls left for today
-        if not check_api_limit(progress, calls_needed=3):
-            print(f"\n⚠️  Daily API limit reached ({progress['daily_api_calls']}). Stopping for today.")
-            print(f"Last processed company: {company} (index {i})")
-            print(f"Resume tomorrow to continue from index {i}")
-            break
         try:
             print(f"\nProcessing {i}: {company}")
             # Process all three statement types for this company
@@ -135,9 +132,10 @@ def main(start_id=None, end_id=None):
 
             # Small delay to be respectful to the API
             time.sleep(0.5)
+        except HTTPError as e:
+            break
         except Exception as e:
             print(f"  ✗ Error processing {company}: {str(e)}")
-            # Still save progress to avoid losing track
             continue
     
     # Final summary
